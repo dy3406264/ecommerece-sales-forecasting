@@ -169,7 +169,7 @@ python analysis/03_forecasting.py
 
 ## 👤 About
 
-Built as part of a data analyst portfolio by a professional with 3 years of experience
+Built as part of a data analyst portfolio with experience
 in Excel, Power BI, SQL, Python, and Tableau.
 
 ---

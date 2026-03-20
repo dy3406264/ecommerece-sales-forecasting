@@ -2,21 +2,26 @@
 # 03_forecasting.py
 # Project : E-Commerce Sales & Revenue Forecasting
 # Author  : Data Analyst Portfolio Project
-# Desc    : Time-series revenue forecasting using Prophet
+# Desc    : Time-series revenue forecasting using statsmodels
+#           (Compatible with Python 3.12+)
 # ============================================================
 
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import os, warnings
 warnings.filterwarnings("ignore")
 
+# ── Auto-install if needed ───────────────────────────────────
 try:
-    from prophet import Prophet
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    from statsmodels.tsa.seasonal import seasonal_decompose
 except ImportError:
-    print("  Installing Prophet...")
-    os.system("pip install prophet -q")
-    from prophet import Prophet
+    print("  Installing statsmodels...")
+    os.system("pip install statsmodels -q")
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    from statsmodels.tsa.seasonal import seasonal_decompose
 
 # ── Config ───────────────────────────────────────────────────
 DATA_PATH       = "data/superstore_clean.csv"
@@ -30,96 +35,144 @@ df = pd.read_csv(DATA_PATH, parse_dates=["order_date"])
 print(f"  Loaded {len(df):,} rows")
 
 # ════════════════════════════════════════════════════════════
-# PREPARE monthly series  →  ds / y  (Prophet format)
+# PREPARE — Aggregate to monthly revenue
 # ════════════════════════════════════════════════════════════
 monthly = (
     df.groupby(df["order_date"].dt.to_period("M"))["sales"]
-    .sum().reset_index()
+    .sum()
+    .reset_index()
 )
 monthly["order_date"] = monthly["order_date"].dt.to_timestamp()
+monthly = monthly.sort_values("order_date").reset_index(drop=True)
 monthly.rename(columns={"order_date": "ds", "sales": "y"}, inplace=True)
-monthly.sort_values("ds", inplace=True)
 
-print(f"  Monthly points : {len(monthly)}")
-print(f"  Range          : {monthly['ds'].min().date()} → {monthly['ds'].max().date()}")
+# Set datetime index for statsmodels
+ts = monthly.set_index("ds")["y"]
+ts.index = pd.DatetimeIndex(ts.index.values, freq="MS")
+
+print(f"  Monthly data points : {len(ts)}")
+print(f"  Range               : {ts.index.min().date()} → {ts.index.max().date()}")
 
 # ════════════════════════════════════════════════════════════
-# TRAIN
+# MODEL — Holt-Winters Exponential Smoothing
+# Best for data with trend + seasonality
 # ════════════════════════════════════════════════════════════
-print("\n  Training Prophet model...")
-model = Prophet(
-    yearly_seasonality=True,
-    weekly_seasonality=False,
-    daily_seasonality=False,
-    changepoint_prior_scale=0.1,
-    seasonality_prior_scale=10,
-    interval_width=0.90
+print("\n  Training Holt-Winters model...")
+
+model = ExponentialSmoothing(
+    ts,
+    trend="add",
+    seasonal="add",
+    seasonal_periods=12,
+    initialization_method="estimated"
 )
-model.fit(monthly)
+fit = model.fit(optimized=True)
 print("  ✔ Model trained")
 
 # ════════════════════════════════════════════════════════════
 # FORECAST
 # ════════════════════════════════════════════════════════════
-future   = model.make_future_dataframe(periods=FORECAST_MONTHS, freq="MS")
-forecast = model.predict(future)
+forecast_values = fit.forecast(FORECAST_MONTHS)
 
-merged = forecast[["ds","yhat","yhat_lower","yhat_upper"]].merge(
-    monthly[["ds","y"]], on="ds", how="left"
+last_date      = ts.index[-1]
+forecast_dates = pd.date_range(
+    start=last_date + pd.DateOffset(months=1),
+    periods=FORECAST_MONTHS,
+    freq="MS"
 )
+forecast_series = pd.Series(forecast_values.values, index=forecast_dates)
 
-forecast_start = monthly["ds"].max()
+fitted     = fit.fittedvalues
+residuals  = ts - fitted
+std_resid  = residuals.std()
+lower      = forecast_series - 1.5 * std_resid
+upper      = forecast_series + 1.5 * std_resid
 
 # ════════════════════════════════════════════════════════════
-# CHART 1 — Full Forecast
+# CHART 1 — Full Forecast Plot
 # ════════════════════════════════════════════════════════════
 print("\n  Generating charts...")
+
 fig, ax = plt.subplots(figsize=(14, 6))
-ax.plot(merged["ds"], merged["y"],
-        label="Actual Revenue", color="#2196F3", linewidth=2.5,
-        marker="o", markersize=4)
-ax.plot(merged["ds"], merged["yhat"],
-        label="Forecast", color="#FF5722", linewidth=2, linestyle="--")
-ax.fill_between(merged["ds"], merged["yhat_lower"], merged["yhat_upper"],
-                alpha=0.15, color="#FF5722", label="90% Confidence Interval")
-ax.axvline(forecast_start, color="gray", linestyle=":", linewidth=1.5, label="Forecast Start")
+ax.plot(ts.index, ts.values,
+        label="Actual Revenue", color="#2196F3",
+        linewidth=2.5, marker="o", markersize=4)
+ax.plot(fitted.index, fitted.values,
+        label="Model Fit", color="#4CAF50",
+        linewidth=1.5, linestyle="--", alpha=0.7)
+ax.plot(forecast_series.index, forecast_series.values,
+        label=f"Forecast ({FORECAST_MONTHS} months)",
+        color="#FF5722", linewidth=2.5,
+        linestyle="--", marker="s", markersize=5)
+ax.fill_between(forecast_series.index, lower, upper,
+                alpha=0.15, color="#FF5722",
+                label="Confidence Interval")
+ax.axvline(last_date, color="gray", linestyle=":",
+           linewidth=1.5, label="Forecast Start")
 ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:,.0f}"))
 ax.set_title(f"Revenue Forecast — Next {FORECAST_MONTHS} Months",
              fontsize=15, fontweight="bold", pad=12)
-ax.set_xlabel("Date"); ax.set_ylabel("Revenue ($)")
-ax.legend(); plt.xticks(rotation=30, ha="right")
+ax.set_xlabel("Date")
+ax.set_ylabel("Revenue ($)")
+ax.legend()
+plt.xticks(rotation=30, ha="right")
 plt.tight_layout()
 plt.savefig(f"{OUTPUT_DIR}/08_revenue_forecast.png", dpi=150)
 plt.close()
 print("  ✔ 08_revenue_forecast.png saved")
 
 # ════════════════════════════════════════════════════════════
-# CHART 2 — Components
+# CHART 2 — Seasonal Decomposition
 # ════════════════════════════════════════════════════════════
-fig2 = model.plot_components(forecast)
-fig2.suptitle("Forecast Components (Trend + Seasonality)", fontsize=13, fontweight="bold")
-fig2.tight_layout()
-fig2.savefig(f"{OUTPUT_DIR}/09_forecast_components.png", dpi=150)
+decomp = seasonal_decompose(ts, model="additive", period=12)
+
+fig, axes = plt.subplots(4, 1, figsize=(14, 10))
+components = [
+    (ts,               "Observed",    "#2196F3"),
+    (decomp.trend,     "Trend",       "#FF5722"),
+    (decomp.seasonal,  "Seasonality", "#4CAF50"),
+    (decomp.resid,     "Residual",    "#9C27B0"),
+]
+for ax, (data, title, color) in zip(axes, components):
+    ax.plot(data.index, data.values, color=color, linewidth=1.8)
+    ax.set_ylabel(title, fontsize=10)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:,.0f}"))
+    ax.grid(True, alpha=0.3)
+
+axes[0].set_title("Revenue — Seasonal Decomposition",
+                  fontsize=14, fontweight="bold", pad=10)
+axes[-1].set_xlabel("Date")
+plt.tight_layout()
+plt.savefig(f"{OUTPUT_DIR}/09_seasonal_decomposition.png", dpi=150)
 plt.close()
-print("  ✔ 09_forecast_components.png saved")
+print("  ✔ 09_seasonal_decomposition.png saved")
 
 # ════════════════════════════════════════════════════════════
 # FORECAST TABLE
 # ════════════════════════════════════════════════════════════
-future_only = forecast[forecast["ds"] > forecast_start][
-    ["ds","yhat","yhat_lower","yhat_upper"]
-].copy()
-future_only.columns = ["Month","Forecasted Revenue","Lower Bound","Upper Bound"]
-future_only["Month"]              = future_only["Month"].dt.strftime("%b %Y")
-future_only["Forecasted Revenue"] = future_only["Forecasted Revenue"].map("${:,.2f}".format)
-future_only["Lower Bound"]        = future_only["Lower Bound"].map("${:,.2f}".format)
-future_only["Upper Bound"]        = future_only["Upper Bound"].map("${:,.2f}".format)
+forecast_df = pd.DataFrame({
+    "Month"             : forecast_series.index.strftime("%b %Y"),
+    "Forecasted Revenue": forecast_series.values,
+    "Lower Bound"       : lower.values,
+    "Upper Bound"       : upper.values,
+})
 
-print("\n" + "=" * 60)
+display_df = forecast_df.copy()
+for col in ["Forecasted Revenue", "Lower Bound", "Upper Bound"]:
+    display_df[col] = display_df[col].map("${:,.2f}".format)
+
+print("\n" + "=" * 62)
 print(f"  REVENUE FORECAST — NEXT {FORECAST_MONTHS} MONTHS")
-print("=" * 60)
-print(future_only.to_string(index=False))
+print("=" * 62)
+print(display_df.to_string(index=False))
 
-future_only.to_csv("outputs/revenue_forecast.csv", index=False)
-print("\n  ✔ Forecast table → outputs/revenue_forecast.csv")
+mae  = np.mean(np.abs(ts.values - fitted.values))
+mape = np.mean(np.abs((ts.values - fitted.values) / ts.values)) * 100
+print(f"\n  Model Quality:")
+print(f"    MAE  (Mean Abs Error)   : ${mae:,.2f}")
+print(f"    MAPE (Mean Abs % Error) : {mape:.2f}%")
+print(f"    Accuracy                : {100 - mape:.2f}%")
+
+forecast_df.to_csv("outputs/revenue_forecast.csv", index=False)
+print("\n  ✔ Forecast saved → outputs/revenue_forecast.csv")
 print("\n  Forecasting Complete! ✅\n")

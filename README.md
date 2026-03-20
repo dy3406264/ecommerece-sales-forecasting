@@ -14,7 +14,7 @@ forecast future revenue to support strategic decision-making.
 | Detail | Info |
 |---|---|
 | **Dataset** | Kaggle Superstore Sales Dataset |
-| **Tools** | Python, SQL, Pandas, Matplotlib, Seaborn, Prophet |
+| **Tools** | Python, SQL, Pandas, Matplotlib, Seaborn, Statsmodels |
 | **Skills** | Data Cleaning, EDA, SQL Analysis, Time-Series Forecasting |
 | **Environment** | GitHub Codespaces (browser-based, no local setup needed) |
 
@@ -36,27 +36,27 @@ forecast future revenue to support strategic decision-making.
 ecommerce-forecasting/
 │
 ├── data/
-│   ├── superstore.csv             ← Raw dataset (upload here)
-│   └── superstore_clean.csv       ← Auto-generated after cleaning
+│   ├── superstore.csv               ← Raw dataset (upload here)
+│   └── superstore_clean.csv         ← Auto-generated after cleaning
 │
 ├── sql/
-│   ├── 01_sales_overview.sql      ← KPIs, yearly & monthly trends
-│   ├── 02_regional_performance.sql← Region, state, city breakdowns
-│   └── 03_product_analysis.sql    ← Products, discounts, loss-makers
+│   ├── 01_sales_overview.sql        ← KPIs, yearly & monthly trends
+│   ├── 02_regional_performance.sql  ← Region, state, city breakdowns
+│   └── 03_product_analysis.sql      ← Products, discounts, loss-makers
 │
 ├── analysis/
-│   ├── 01_data_cleaning.py        ← Clean, validate & feature engineer
-│   ├── 02_eda.py                  ← 7 EDA charts + KPI summary
-│   └── 03_forecasting.py          ← Prophet forecasting + charts
+│   ├── 01_data_cleaning.py          ← Clean, validate & feature engineer
+│   ├── 02_eda.py                    ← 7 EDA charts + KPI summary
+│   └── 03_forecasting.py            ← Holt-Winters forecasting + charts
 │
 ├── outputs/
-│   ├── charts/                    ← All generated PNG charts
-│   └── revenue_forecast.csv       ← 6-month forecast table
+│   ├── charts/                      ← All generated PNG charts
+│   └── revenue_forecast.csv         ← 6-month forecast table
 │
 ├── .devcontainer/
-│   └── devcontainer.json          ← Auto-setup for GitHub Codespaces
+│   └── devcontainer.json            ← Auto-setup for GitHub Codespaces
 ├── requirements.txt
-├── run_all.sh                     ← One command runs everything
+├── run_all.sh                       ← One command runs everything
 └── README.md
 ```
 
@@ -117,8 +117,30 @@ python analysis/03_forecasting.py
 | 05 | Top 10 Products | Highest revenue-generating products |
 | 06 | Sub-Category Margins | Profit margin winners & losers |
 | 07 | Discount vs Profit | Impact of discounting on profitability |
-| 08 | Revenue Forecast | 6-month forward projection |
-| 09 | Forecast Components | Trend + seasonality decomposition |
+| 08 | Revenue Forecast | 6-month forward projection with confidence interval |
+| 09 | Seasonal Decomposition | Trend + seasonality breakdown |
+
+### Preview
+
+![Monthly Revenue Trend](outputs/charts/01_monthly_revenue.png)
+![Revenue Forecast](outputs/charts/08_revenue_forecast.png)
+![Category Performance](outputs/charts/03_category_performance.png)
+![Profit Margin by Sub-Category](outputs/charts/06_subcategory_margin.png)
+
+---
+
+## 📅 6-Month Revenue Forecast
+
+| Month | Forecasted Revenue | Lower Bound | Upper Bound |
+|---|---|---|---|
+| Jan 2018 | $49,690 | $36,176 | $63,204 |
+| Feb 2018 | $41,838 | $28,324 | $55,352 |
+| Mar 2018 | $74,872 | $61,358 | $88,386 |
+| Apr 2018 | $61,539 | $48,025 | $75,053 |
+| May 2018 | $68,505 | $54,991 | $82,019 |
+| Jun 2018 | $65,394 | $51,880 | $78,908 |
+
+> Model: Holt-Winters Exponential Smoothing (additive trend + seasonality)
 
 ---
 
@@ -130,8 +152,8 @@ python analysis/03_forecasting.py
 | `numpy` | Numerical operations |
 | `matplotlib` | Chart generation |
 | `seaborn` | Statistical visualisations |
-| `prophet` | Time-series forecasting |
-| `SQL (SQLite)` | Business queries & aggregations |
+| `statsmodels` | Holt-Winters time-series forecasting |
+| `SQL (SQLite syntax)` | Business queries & aggregations |
 
 ---
 
